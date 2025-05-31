@@ -1,2 +1,3 @@
 /notebooks/latents/*
 /utils/*
+**/__pycache__/*
