@@ -111,24 +111,20 @@ class VectorFieldModel2(torch.nn.Module):
 
                     xt_grad = xt_detached.grad.detach() # Gradient of rating score w.r.t. xt
 
-                norm_raw = torch.linalg.norm(v, dim=-1, keepdim=True)
-                # Only normalize if norm is greater than 1
-                v = v/norm_raw**0.5/torch.clamp(norm_raw**0.5, min=1)
-                # Add gradient to the predicted vector field
-                xt_grad = xt_grad / torch.linalg.norm(xt_grad, dim=-1, keepdim=True) * (1-torch.clamp(norm_raw**2, max=0.99))**0.5
-                v = v + xt_grad
-
-                # Normalize the final vector field
-                norm = torch.linalg.norm(v, dim=-1, keepdim=True)
-                v = v / torch.clamp(norm, min=1e-9) # Avoid division by zero
+                #norm_raw = torch.linalg.norm(v, dim=-1, keepdim=True)
+                ## Only normalize if norm is greater than 1
+                #v = v/norm_raw**0.5/torch.clamp(norm_raw**0.5, min=1)
+                ## Add gradient to the predicted vector field
+                # xt_grad = xt_grad / torch.linalg.norm(xt_grad, dim=-1, keepdim=True) * (1-torch.clamp(norm_raw**2, max=0.99))**0.5
+                v = v + xt_grad/torch.linalg.norm(xt_grad, dim=-1, keepdim=True)**2
 
                 return v
 
             except Exception as e:
                 print(f"Warning: Failed to subtract rating gradient: {e}. Returning raw prediction.")
                 # Fallback: return the raw prediction, maybe normalized
-                norm_raw = torch.linalg.norm(v, dim=-1, keepdim=True)
-                return v / torch.clamp(norm_raw, min=1e-9)
+                #norm_raw = torch.linalg.norm(v, dim=-1, keepdim=True)
+                return v #/ torch.clamp(norm_raw, min=1e-9)
         else:
              return v 
         return 
@@ -304,11 +300,84 @@ class VectorFieldTransformer(nn.Module):
         # --- Final Output ---
         h_final = self.final_norm(h_out)
         vector_field_pred = self.to_vector_field(h_final) # Predicted raw vector field
+        return vector_field_pred
 
+
+        # # --- Subtract Trust Model Gradient (as in original code) ---
+        # if self.add_rating_gradient:
+        #     try:
+        #         with torch.enable_grad():
+        #             xt_detached = xt.clone().detach().requires_grad_(True)
+        #             rating_output = self.rating_model[0](xt_detached) # Get logit output
+
+        #             # Sum for scalar loss to get gradient w.r.t. xt
+        #             rating_output_sum = torch.sum(rating_output)
+        #             rating_output_sum.backward()
+
+        #             xt_grad = xt_detached.grad.detach() # Gradient of rating score w.r.t. xt
+
+        #         # if not self.training:
+        #         #     vector_field_pred = vector_field_pred / vector_field_pred.norm(dim=-1).median()*0.3
+        #         norm_raw = torch.linalg.norm(vector_field_pred, dim=-1, keepdim=True)
+        #         # Only normalize if norm is greater than 1
+        #         vector_field_pred = vector_field_pred/torch.clamp(norm_raw, min=1)
+        #         # Add gradient to the predicted vector field
+        #         xt_grad = xt_grad / torch.linalg.norm(xt_grad, dim=-1, keepdim=True) * (1-torch.clamp(norm_raw**2, max=0.99))**0.5
+        #         vector_field_final = vector_field_pred + xt_grad
+
+        #         # Normalize the final vector field
+        #         norm = torch.linalg.norm(vector_field_final, dim=-1, keepdim=True)
+        #         vector_field_normalized = vector_field_final / torch.clamp(norm, min=1e-9) # Avoid division by zero
+
+        #         return vector_field_normalized
+
+        #     except Exception as e:
+        #         print(f"Warning: Failed to subtract rating gradient: {e}. Returning raw prediction.")
+        #         # Fallback: return the raw prediction, maybe normalized
+        #         norm_raw = torch.linalg.norm(vector_field_pred, dim=-1, keepdim=True)
+        #         return vector_field_pred / torch.clamp(norm_raw, min=1e-9)
+        # else:
+        #      # If not subtracting gradient, just return the prediction (optionally normalized)
+        #     #  norm_raw = torch.linalg.norm(vector_field_pred, dim=-1, keepdim=True)
+        #     #  norm_raw = torch.clamp(norm_raw, min=1e-9)
+        #      return vector_field_pred #/ norm_raw
+
+
+class VectorFieldTransformer2(VectorFieldTransformer):
+    def __init__(self,
+        rating_model,
+        dim: int = config.FLOW_MODEL_DIM,
+        depth: int = config.FLOW_MODEL_DEPTH,
+        num_heads: int = config.FLOW_MODEL_NUM_HEADS,
+        dim_head: int = config.FLOW_MODEL_DIM_HEAD,
+        num_registers: int = config.FLOW_MODEL_NUM_REGISTERS,
+        mlp_ratio: int = 4, # Standard ratio
+        dropout: float = config.FLOW_MODEL_DROPOUT,
+        use_rotary: bool = False, # Use rotary embeddings
+        use_flash_attention: bool = True, # Use flash attention if available
+        condition_dim: int = config.FLOW_MODEL_CONDITION_DIM, # Dimension of the rating embedding,
+        add_rating_gradient: bool = True # Flag to control this behavior
+    ):
+        super().__init__(
+            rating_model,
+            dim,
+            depth,
+            num_heads,
+            dim_head,
+            num_registers,
+            mlp_ratio,
+            dropout,
+            use_rotary,
+            use_flash_attention,
+            condition_dim,
+            add_rating_gradient
+        )
+
+    def forward(self, xt, rating_cond=None):
+        vector_field_pred = super().forward(xt, rating_cond)
         # --- Subtract Trust Model Gradient (as in original code) ---
         if self.add_rating_gradient:
             try:
-                print("Adding rating gradient")
                 with torch.enable_grad():
                     xt_detached = xt.clone().detach().requires_grad_(True)
                     rating_output = self.rating_model[0](xt_detached) # Get logit output
@@ -344,6 +413,7 @@ class VectorFieldTransformer(nn.Module):
             #  norm_raw = torch.linalg.norm(vector_field_pred, dim=-1, keepdim=True)
             #  norm_raw = torch.clamp(norm_raw, min=1e-9)
              return vector_field_pred #/ norm_raw
+
 
 
 class RatingODE(nn.Module):
