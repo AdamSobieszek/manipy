@@ -6,7 +6,7 @@ import numpy as np
 import PIL.Image
 from torchvision.transforms import Compose, Resize
 import torchvision.transforms.functional as TF
-from configs import config # Import config for paths and settings
+from ..configs import config # Import config for paths and settings
 # Assuming setup_stylegan installs/clones necessary repos if run directly or paths are preset
 # Need to import G definition if not using pickle directly
 # Sys path manipulation is tricky, try relative imports if possible, or ensure PYTHONPATH is set
@@ -14,6 +14,7 @@ from configs import config # Import config for paths and settings
 # Global cache for G and w_avg to avoid reloading repeatedly
 _G_cache = None
 _w_avg_cache = None
+
 
 def load_stylegan_G(device=None):
     """Loads the StyleGAN generator model (G_ema) and its average W vector."""
