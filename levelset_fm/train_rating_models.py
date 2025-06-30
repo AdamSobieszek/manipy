@@ -18,7 +18,7 @@ if project_root not in sys.path:
 
 # Local imports
 from configs import config
-from models.trust_model import AlphaBetaRegressor, EnsembleRegressor, load_trust_model_ensemble # Import model definition
+from levelset_fm.models.rating_model import AlphaBetaRegressor, EnsembleRegressor, load_trust_model_ensemble # Import model definition
 from losses.beta_loss import BetaNLLLoss, MixupBetaNLLLoss, mixup_bootstrapped_samples # Import loss
 from utils.stylegan_utils import get_w_avg, sample_w # Need w_avg and sampling for laplacian reg
 from utils.general_utils import print_gpu_memory

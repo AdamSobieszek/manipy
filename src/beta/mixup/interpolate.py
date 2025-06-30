@@ -1,8 +1,5 @@
 import numpy as np
 import matplotlib
-matplotlib.use('TkAgg')
-import matplotlib.pyplot as plt
-plt.ion()  # Turn on interactive mode
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import beta
@@ -49,33 +46,38 @@ def fit_beta(data):
     result = minimize(neg_log_likelihood, [1, 1], method='L-BFGS-B', bounds=[(1e-5, None), (1e-5, None)])
     return result.x
 
-observations1 = np.random.beta(1, 1, 1000)
-observations2 = np.random.beta(5, 2, 1000)
 
-# Create subplots for different interpolation strengths
-interpolation_strengths = [0, 0.25, 0.5, 0.75, 1]
-fig, axes = plt.subplots(1, len(interpolation_strengths), figsize=(20, 4))
-fig.suptitle('Corrected Bootstrap Interpolation with Fitted Beta Distributions')
+if __name__ == "__main__":
+    matplotlib.use('TkAgg')
+    import matplotlib.pyplot as plt
+    plt.ion()  # Turn on interactive mode
+    observations1 = np.random.beta(1, 1, 1000)
+    observations2 = np.random.beta(5, 2, 1000)
 
-for i, t in enumerate(interpolation_strengths):
-    interpolated_samples = interpolate_distributions(observations1, observations2, t)
+    # Create subplots for different interpolation strengths
+    interpolation_strengths = [0, 0.25, 0.5, 0.75, 1]
+    fig, axes = plt.subplots(1, len(interpolation_strengths), figsize=(20, 4))
+    fig.suptitle('Corrected Bootstrap Interpolation with Fitted Beta Distributions')
 
-    # Plot histogram
-    axes[i].hist(interpolated_samples, bins=30, density=True, alpha=0.7, color='skyblue')
+    for i, t in enumerate(interpolation_strengths):
+        interpolated_samples = interpolate_distributions(observations1, observations2, t)
 
-    # Fit and plot beta distribution
-    a, b = fit_beta(interpolated_samples)
-    x_beta = np.linspace(0, 1, 100)
-    y_beta = beta.pdf(x_beta, a, b)
-    axes[i].plot(x_beta, y_beta, color='red', linestyle='--', label=f'Beta({a:.2f}, {b:.2f})')
+        # Plot histogram
+        axes[i].hist(interpolated_samples, bins=30, density=True, alpha=0.7, color='skyblue')
 
-    axes[i].set_title(f't = {t}, a+b = {a + b:.2f}')
-    axes[i].set_xlabel('Value')
-    axes[i].set_ylabel('Density')
-    axes[i].legend()
-    axes[i].set_xlim(0, 1)
+        # Fit and plot beta distribution
+        a, b = fit_beta(interpolated_samples)
+        x_beta = np.linspace(0, 1, 100)
+        y_beta = beta.pdf(x_beta, a, b)
+        axes[i].plot(x_beta, y_beta, color='red', linestyle='--', label=f'Beta({a:.2f}, {b:.2f})')
 
-plt.tight_layout()
-plt.show()
+        axes[i].set_title(f't = {t}, a+b = {a + b:.2f}')
+        axes[i].set_xlabel('Value')
+        axes[i].set_ylabel('Density')
+        axes[i].legend()
+        axes[i].set_xlim(0, 1)
 
-plt.pause(100)
+    plt.tight_layout()
+    plt.show()
+
+    plt.pause(100)

@@ -15,7 +15,7 @@ if project_root not in sys.path:
 # Local imports
 from configs import config
 from models.flow_model import VectorFieldTransformer, RatingODE # Flow model and ODE wrapper
-from models.trust_model import load_trust_model_ensemble # To load trust model for conditioning
+from levelset_fm.models.rating_model import load_trust_model_ensemble # To load trust model for conditioning
 from utils.checkpoint_utils import load_flow_checkpoint # Function to load flow model checkpoint
 from utils.stylegan_utils import sample_w, generate_images_from_w, get_w_avg # For sampling start points and generating images
 from utils.visualization import display_images_matplotlib # For displaying results

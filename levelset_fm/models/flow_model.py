@@ -23,7 +23,7 @@ class VectorFieldModel(torch.nn.Module):
     """
     
     def __init__(self, input_dim=513, hidden_dims=[1024, 1024, 1024], output_dim=512, 
-                 activation=torch.nn.ReLU(), dropout_rate=0.1):
+                 activation=torch.nn.ReLU(), dropout_rate=0.1, center_w_avg=None):
         """
         Initialize the vector field transformer network.
         
@@ -50,8 +50,9 @@ class VectorFieldModel(torch.nn.Module):
         layers.append(torch.nn.Linear(prev_dim, output_dim))
         
         self.network = torch.nn.Sequential(*layers)
+        self.center_w_avg = center_w_avg
     
-    def forward(self, x, rating):
+    def forward(self, x, rating=None):
         """
         Forward pass through the network.
         
@@ -61,7 +62,9 @@ class VectorFieldModel(torch.nn.Module):
         Returns:
             Transformed tensor of shape (batch_size, 512)
         """
-        return self.network(torch.cat((x, rating), dim=1))
+        if self.center_w_avg is not None:
+            x = x - self.center_w_avg.to(x.device)
+        return self.network(torch.cat((x, rating), dim=1)) if rating is not None else self.network(x)
         # Concatenate rating to input\
 
 class VectorFieldModel2(torch.nn.Module):
@@ -71,7 +74,7 @@ class VectorFieldModel2(torch.nn.Module):
     """
     
     def __init__(self, rating_model, input_dim=513, hidden_dims=[1024, 1024, 1024], output_dim=512, 
-                 activation=torch.nn.ReLU(), dropout_rate=0.1, add_rating_gradient=False):
+                 activation=torch.nn.ReLU(), dropout_rate=0.1, add_rating_gradient=False, center_w_avg=None):
         """
         Initialize the vector field transformer network.
         
@@ -99,6 +102,7 @@ class VectorFieldModel2(torch.nn.Module):
         
         self.network = torch.nn.Sequential(*layers)
         self.add_rating_gradient = add_rating_gradient
+        self.center_w_avg = center_w_avg
     
     def forward(self, x):
         """
@@ -110,13 +114,17 @@ class VectorFieldModel2(torch.nn.Module):
         Returns:
             Transformed tensor of shape (batch_size, 512)
         """
+
+        if self.center_w_avg is not None:
+            x = x - self.center_w_avg.to(x.device)
+
         v = self.network(torch.cat((x, self.rating_model[0](x).view(-1,1)), dim=1))
         # --- Subtract Trust Model Gradient (as in original code) ---
         if self.add_rating_gradient:
             try:
                 with torch.enable_grad():
-                    xt_detached = x.clone().detach().requires_grad_(True)
-                    rating_output = self.rating_model[0](xt_detached) # Get logit output
+                    xt_detached = (x +self.center_w_avg.to(x.device)).clone().detach().requires_grad_(True)
+                    rating_output = self.rating_model[0](xt_detached, output='logit') # Get logit output
 
                     # Sum for scalar loss to get gradient w.r.t. xt
                     rating_output_sum = torch.sum(rating_output)
@@ -143,202 +151,6 @@ class VectorFieldModel2(torch.nn.Module):
         return 
         # Concatenate rating to input\
 
-class VectorFieldTransformer(nn.Module):
-    """ Transformer model to predict the vector field v(xt, rating_condition). """
-    def __init__(
-        self,
-        rating_model,
-        dim: int = config.FLOW_MODEL_DIM,
-        depth: int = config.FLOW_MODEL_DEPTH,
-        num_heads: int = config.FLOW_MODEL_NUM_HEADS,
-        dim_head: int = config.FLOW_MODEL_DIM_HEAD,
-        num_registers: int = config.FLOW_MODEL_NUM_REGISTERS,
-        mlp_ratio: int = 4, # Standard ratio
-        dropout: float = config.FLOW_MODEL_DROPOUT,
-        use_rotary: bool = False, # Use rotary embeddings
-        use_flash_attention: bool = True, # Use flash attention if available
-        condition_dim: int = config.FLOW_MODEL_CONDITION_DIM, # Dimension of the rating embedding,
-        add_rating_gradient: bool = True # Flag to control this behavior
-    ):
-        super().__init__()
-
-        # Try setting matmul precision if needed and supported
-        try: torch.set_float32_matmul_precision('high')
-        except: pass # Ignore if not supported
-        # Store rating model without registering as parameter
-        rating_model.eval()
-        self.rating_model = [rating_model]
-        self.dim = dim
-        self.depth = depth
-        self.w_avg = get_w_avg().detach() # Load w_avg
-
-        # Input projection for xt
-        self.proj_in = nn.Linear(dim, dim) # W latent dim to model dim
-
-        # Projection/Embedding for the rating condition
-        # Using TimestepEmbedding adapted for scalar rating/logit input
-        self.rating_proj = nn.Sequential(
-            TimestepEmbedding(condition_dim),
-            nn.Linear(condition_dim, dim*4),
-            nn.GELU(),
-            nn.Linear(dim*4, dim)
-        )
-
-        # Learnable registers
-        self.num_registers = num_registers
-        if num_registers > 0:
-            self.registers = nn.Parameter(torch.zeros(num_registers, dim))
-            nn.init.normal_(self.registers, std=0.02) # Initialize registers
-        else:
-            self.registers = None
-
-        # Rotary embeddings for position encoding (optional)
-        self.rotary_emb = RotaryEmbedding(dim=dim_head) if use_rotary else None
-
-        # Transformer Layers
-        self.layers = nn.ModuleList([])
-        for _ in range(depth):
-            self.layers.append(nn.ModuleList([
-                RMSNorm(dim), # Pre-norm attention
-                Attention(
-                    dim=dim,
-                    heads=num_heads,
-                    dim_head=dim_head,
-                    dropout=dropout,
-                    flash=use_flash_attention,
-                    # Additional options from original code:
-                    # gate_value_heads=True, # Gating can sometimes help
-                    # softclamp_logits=False, # Typically false
-                    # zero_init_output=True # Can improve stability
-                ),
-                RMSNorm(dim), # Pre-norm feedforward
-                FeedForward(
-                    dim=dim,
-                    mult=mlp_ratio,
-                    dropout=dropout,
-                    glu=True # Use GLU activation
-                )
-            ]))
-
-        # Final output layers
-        self.final_norm = RMSNorm(dim)
-        self.to_vector_field = nn.Linear(dim, dim) # Output matches input W dimension
-
-        # --- Part from Original Code: Subtracting Trust Model Gradient ---
-        # This requires the trust model during forward pass.
-        # It makes the flow model dependent on the specific trust model structure.
-        # Consider if this is desired, or if the target vector 'ut' should already account for this.
-        # For now, implementing as in the original 'forward'.
-        self.add_rating_gradient = add_rating_gradient # Flag to control this behavior
-        print(f"Flow model initialized. Subtract trust gradient: {self.add_rating_gradient}")
-
-
-    def forward(
-        self,
-        xt: torch.Tensor,      # Latent vector at time t (batch, 512)
-        rating_cond: torch.Tensor = None # Rating condition (batch, 1) or (batch,)
-    ) -> torch.Tensor:
-        """ Forward pass of the flow model. """
-        batch_size = xt.shape[0]
-        device = xt.device
-
-        if rating_cond is None:
-            rating_cond = self.rating_model[0](xt)
-
-        # --- Input Processing ---
-        # Center xt around w_avg
-        xt_centered = xt #- self.w_avg.to(device)
-        # Project xt features
-        h = self.proj_in(xt_centered)
-
-        # Embed rating condition
-        # Ensure rating_cond has shape (batch,) or (batch, 1) before embedding
-        if rating_cond.ndim > 1 and rating_cond.shape[1] > 1:
-             rating_cond = rating_cond[:, 0] # Take first element if more than one dim provided
-
-        rating_emb = self.rating_proj(rating_cond) # Shape (batch, dim)
-
-        # Combine input features with rating embedding (simple addition)
-        h = h + rating_emb
-
-        # Add registers if used
-        tokens = [h]
-        if self.registers is not None:
-            registers = repeat(self.registers, 'r d -> b r d', b=batch_size)
-            tokens.insert(0, registers) # Prepend registers
-
-        # Pack tokens for transformer input
-        h_packed, ps = pack(tokens, 'b * d') # Shape (batch, num_tokens, dim)
-        num_tokens = h_packed.shape[1]
-
-        # --- Rotary Embeddings (Optional) ---
-        rotary_pos_emb = None
-        if self.rotary_emb is not None:
-            # Generate rotary embeddings based on sequence length
-            rotary_pos_emb = self.rotary_emb.forward_from_seq_len(seq_len=num_tokens)
-
-        # --- Transformer Layers ---
-        for norm1, attn, norm2, ff in self.layers:
-            # Attention block
-            h_res = h_packed
-            h_norm1 = norm1(h_packed)
-            attn_out = attn(h_norm1, rotary_pos_emb=rotary_pos_emb)
-            h_packed = h_res + attn_out # Residual connection
-
-            # FeedForward block
-            h_res = h_packed
-            h_norm2 = norm2(h_packed)
-            ff_out = ff(h_norm2)
-            h_packed = h_res + ff_out # Residual connection
-
-        # Unpack tokens, discard registers
-        unpacked_tokens = unpack(h_packed, ps, 'b * d')
-        h_out = unpacked_tokens[-1] # Get the output corresponding to the original xt input
-
-        # --- Final Output ---
-        h_final = self.final_norm(h_out)
-        vector_field_pred = self.to_vector_field(h_final) # Predicted raw vector field
-        return vector_field_pred
-
-
-        # # --- Subtract Trust Model Gradient (as in original code) ---
-        # if self.add_rating_gradient:
-        #     try:
-        #         with torch.enable_grad():
-        #             xt_detached = xt.clone().detach().requires_grad_(True)
-        #             rating_output = self.rating_model[0](xt_detached) # Get logit output
-
-        #             # Sum for scalar loss to get gradient w.r.t. xt
-        #             rating_output_sum = torch.sum(rating_output)
-        #             rating_output_sum.backward()
-
-        #             xt_grad = xt_detached.grad.detach() # Gradient of rating score w.r.t. xt
-
-        #         # if not self.training:
-        #         #     vector_field_pred = vector_field_pred / vector_field_pred.norm(dim=-1).median()*0.3
-        #         norm_raw = torch.linalg.norm(vector_field_pred, dim=-1, keepdim=True)
-        #         # Only normalize if norm is greater than 1
-        #         vector_field_pred = vector_field_pred/torch.clamp(norm_raw, min=1)
-        #         # Add gradient to the predicted vector field
-        #         xt_grad = xt_grad / torch.linalg.norm(xt_grad, dim=-1, keepdim=True) * (1-torch.clamp(norm_raw**2, max=0.99))**0.5
-        #         vector_field_final = vector_field_pred + xt_grad
-
-        #         # Normalize the final vector field
-        #         norm = torch.linalg.norm(vector_field_final, dim=-1, keepdim=True)
-        #         vector_field_normalized = vector_field_final / torch.clamp(norm, min=1e-9) # Avoid division by zero
-
-        #         return vector_field_normalized
-
-        #     except Exception as e:
-        #         print(f"Warning: Failed to subtract rating gradient: {e}. Returning raw prediction.")
-        #         # Fallback: return the raw prediction, maybe normalized
-        #         norm_raw = torch.linalg.norm(vector_field_pred, dim=-1, keepdim=True)
-        #         return vector_field_pred / torch.clamp(norm_raw, min=1e-9)
-        # else:
-        #      # If not subtracting gradient, just return the prediction (optionally normalized)
-        #     #  norm_raw = torch.linalg.norm(vector_field_pred, dim=-1, keepdim=True)
-        #     #  norm_raw = torch.clamp(norm_raw, min=1e-9)
-        #      return vector_field_pred #/ norm_raw
 
 class VectorFieldTransformer(nn.Module):
     """ Transformer model to predict the vector field v(xt, rating_condition). """
@@ -355,33 +167,42 @@ class VectorFieldTransformer(nn.Module):
         use_rotary: bool = True,
         use_flash_attention: bool = True,
         add_rating_gradient: bool = False,
-        project: bool = False
+        condition_dim: int = 512, # Dimension of the rating embedding,
+        project: bool = False,
+        normalize: bool = True,
+        sigmoid_on_rating: bool = False,
+        vector_field_dim: int = None,
     ):
         super().__init__()
 
         # Set matmul precision
         torch.set_float32_matmul_precision('high')
 
+        if vector_field_dim is None:
+            self.vector_field_dim = dim
+        else:
+            self.vector_field_dim = vector_field_dim
         self.dim = dim
         self.depth = depth
+        self.condition_dim = condition_dim
         self.add_rating_gradient =add_rating_gradient
         self.rating_model = [rating_model]
         self.project = project
-
+        self.sigmoid_on_rating = sigmoid_on_rating
         # Input projections
-        self.proj_in = nn.Linear(dim, dim)
+        self.proj_in = nn.Linear(self.vector_field_dim, self.dim)
 
         self.rating_proj = nn.Sequential(
-            TimestepEmbedding(dim),
-            nn.Linear(dim, dim*4),
+            TimestepEmbedding(self.condition_dim),
+            nn.Linear(self.condition_dim, dim*4),
             nn.GELU(),
-            nn.Linear(dim*4, dim)
+            nn.Linear(dim*4, self.dim)
         )
 
 
         # Registers
         self.num_registers = num_registers
-        self.registers = nn.Parameter(torch.zeros(num_registers, dim))
+        self.registers = nn.Parameter(torch.zeros(num_registers, self.dim))
         nn.init.normal_(self.registers, std=0.02)
 
         # Rotary embeddings
@@ -412,8 +233,8 @@ class VectorFieldTransformer(nn.Module):
             ]))
 
         self.final_norm = RMSNorm(dim)
-        self.to_vector_field = nn.Linear(dim, dim)
-
+        self.to_vector_field = nn.Linear(dim, self.vector_field_dim)
+        self.normalize = normalize
         self.w_avg = get_w_avg().detach()
 
     def to_bf16(self):
@@ -424,14 +245,20 @@ class VectorFieldTransformer(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-        ratings: torch.Tensor
+        ratings: torch.Tensor = None
     ) -> torch.Tensor:
         batch = x.shape[0]
+
+        if ratings is None:
+            ratings = self.rating_model[0](x, output='logit')
+
 
         # Project input and rating
         x2 = x.clone().detach().requires_grad_()
         x = x - self.w_avg.to(x.device)
         h = self.proj_in(x)
+        if self.sigmoid_on_rating:
+            ratings = torch.sigmoid(ratings)
         rating_emb = self.rating_proj(ratings)
 
         # Combine input features with rating embedding
@@ -464,13 +291,14 @@ class VectorFieldTransformer(nn.Module):
         # Final normalization and projection
         h = self.final_norm(h)
         vector_field = self.to_vector_field(h)
-        if not self.add_rating_gradient:
-            return vector_field/vector_field.norm(dim=-1,keepdim=True)
+        if self.add_rating_gradient:
+            with torch.enable_grad():
+                r = self.rating_model[0](x2, output='mean')
+                torch.sum(torch.logit(r)).backward()
+                x_grad = x2.grad.detach()
+            
+            vector_field = (vector_field - x_grad)
 
-        with torch.enable_grad():
-            r = self.rating_model[0](x2,'mean')
-            torch.sum(torch.logit(r)).backward()
-            x_grad = x2.grad.detach()
 
         if self.project:
             with torch.no_grad():
@@ -479,12 +307,72 @@ class VectorFieldTransformer(nn.Module):
             dot_products = torch.bmm(vector_field.unsqueeze(1), normed_x_grad.unsqueeze(2)).squeeze(-1)
             projection = dot_products * normed_x_grad
             vector_field = vector_field - projection
-            vector_field = (vector_field - x_grad)
-            return vector_field/vector_field.norm(dim=-1,keepdim=True)
+
+        if self.normalize:
+            return vector_field/vector_field.norm(dim=-1,keepdim=True).clamp(min=1e-9)
+        else:
+            return vector_field
 
 
-        vector_field = (vector_field - x_grad)
-        return vector_field/vector_field.norm(dim=-1,keepdim=True)
+class VectorFieldTransformer3(VectorFieldTransformer):
+    def __init__(self,
+        rating_model,
+        dim: int = config.FLOW_MODEL_DIM,
+        depth: int = config.FLOW_MODEL_DEPTH,
+        num_heads: int = config.FLOW_MODEL_NUM_HEADS,
+        dim_head: int = config.FLOW_MODEL_DIM_HEAD,
+        num_registers: int = config.FLOW_MODEL_NUM_REGISTERS,
+        mlp_ratio: int = 4, # Standard ratio
+        dropout: float = config.FLOW_MODEL_DROPOUT,
+        use_rotary: bool = True, # Use rotary embeddings
+        use_flash_attention: bool = True, # Use flash attention if available
+        condition_dim: int = config.FLOW_MODEL_CONDITION_DIM, # Dimension of the rating embedding,
+        add_rating_gradient: bool = True,
+        normalize: bool = False,
+        sigmoid_on_rating: bool = False,
+        vector_field_dim: int = None,
+    ):
+        super().__init__(
+            rating_model=rating_model,
+            dim=dim,
+            depth=depth,
+            num_heads=num_heads,
+            dim_head=dim_head,
+            num_registers=num_registers,
+            mlp_ratio=mlp_ratio,
+            dropout=dropout,
+            use_rotary=use_rotary,
+            use_flash_attention=use_flash_attention,
+            condition_dim=condition_dim,
+            add_rating_gradient=False,
+            normalize=normalize,
+            sigmoid_on_rating=sigmoid_on_rating,
+            vector_field_dim=vector_field_dim
+        )
+        self.add_rating_gradient = add_rating_gradient
+        self.normalize = normalize
+    
+    def forward(self, xt, rating_cond=None):
+        if self.add_rating_gradient:
+                with torch.enable_grad():
+                    xt_detached = (xt).clone().detach().requires_grad_(True)
+                    rating_output = self.rating_model[0](xt_detached, output='logit') # Get logit output
+
+                    # Sum for scalar loss to get gradient w.r.t. xt
+                    rating_output_sum = torch.sum(rating_output)
+                    rating_output_sum.backward()
+
+                    xt_grad = xt_detached.grad.detach() # Gradient of rating score w.r.t. xt
+
+        vector_field_pred = super().forward(xt, rating_cond)
+        if self.add_rating_gradient:
+            xt_grad = xt_grad / xt_grad.norm(dim=-1, keepdim=True)**2
+            vector_field_final = vector_field_pred + xt_grad
+
+            return vector_field_final
+        else:
+             return vector_field_pred 
+
 
 class VectorFieldTransformer2(VectorFieldTransformer):
     def __init__(self,
@@ -558,16 +446,18 @@ class VectorFieldTransformer2(VectorFieldTransformer):
              return vector_field_pred #/ norm_raw
 
 
-
 class RatingODE(nn.Module):
     """ Wraps the flow model and trust model for ODE integration during inference. """
-    def __init__(self, flow_model, rating_model, kwargs = {"output":"logit"}):
+    def __init__(self, flow_model, rating_model=None, kwargs = {"output":"logit"}, reverse=False):
         super().__init__()
         self.flow = flow_model
-        self.rating = rating_model
         self.flow.eval() # Ensure flow model is in eval mode
-        self.rating.eval() # Ensure trust model is in eval mode
+        self.rating = rating_model
+        if self.rating is not None:
+            self.rating.eval() # Ensure trust model is in eval mode
         self.kwargs = kwargs
+        self.reverse = reverse
+
     @torch.no_grad() # ODE solver step should not compute gradients normally
     def forward(self, t, x): # torchdyn/torchdiffeq expect forward(t, x) signature
         """
@@ -581,12 +471,15 @@ class RatingODE(nn.Module):
         # Get current rating/logit using the trust model
         # Assuming trust model predicts logit directly or via "logit" mode
         # Ensure input x matches what trust model expects (e.g., W space)
-        rating_condition = self.rating(x, **self.kwargs) # Shape (batch, 1)
+        if self.rating is not None:
+            rating_condition = self.rating(x, **self.kwargs) # Shape (batch, 1)
+            # Get vector field prediction from the flow model using current state x and rating
+            # Assuming flow model's forward is flow(xt, rating_cond)
+            vector_field = self.flow(x, rating_condition)
+        else:
+            vector_field = self.flow(x)
 
-        # Get vector field prediction from the flow model using current state x and rating
-        # Assuming flow model's forward is flow(xt, rating_cond)
-        vector_field = self.flow(x, rating_condition)
-        return vector_field
+        return vector_field*(-1 if self.reverse else 1)
 
 class AdaptiveRatingODE(nn.Module):
     """ Wraps the flow model and trust model for ODE integration during inference. """
@@ -620,3 +513,202 @@ class AdaptiveRatingODE(nn.Module):
         # Get vector field prediction from the flow model using current state x and rating
         # Assuming flow model's forward is flow(xt, rating_cond)
         return vector_field
+
+
+import torch
+import torch.nn as nn
+import math
+from typing import Sequence
+
+# --- Helper Modules ---
+
+class SinusoidalPosEmb(nn.Module):
+    """ Sinusoidal Positional Embedding for conditioning (e.g., on ratings). """
+    def __init__(self, dim: int):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x (torch.Tensor): Input tensor of ratings, shape (B,) or (B, 1).
+        Returns:
+            torch.Tensor: Embedded tensor, shape (B, dim).
+        """
+        device = x.device
+        half_dim = self.dim // 2
+        emb = math.log(10000) / (half_dim - 1)
+        emb = torch.exp(torch.arange(half_dim, device=device) * -emb)
+        # Ensure x is 2D for broadcasting
+        emb = x.view(x.shape[0], -1) * emb.unsqueeze(0)
+        emb = torch.cat((emb.sin(), emb.cos()), dim=-1)
+        return emb
+
+class ResnetBlock(nn.Module):
+    """ A ResNet block with conditioning, using Linear layers for non-spatial data. """
+    def __init__(self, dim_in: int, dim_out: int, *, cond_dim: int):
+        super().__init__()
+        
+        self.block1 = nn.Sequential(
+            nn.LayerNorm(dim_in),
+            nn.SiLU(),
+            nn.Linear(dim_in, dim_out)
+        )
+        
+        self.cond_proj = nn.Sequential(
+            nn.SiLU(),
+            nn.Linear(cond_dim, dim_out)
+        )
+
+        self.block2 = nn.Sequential(
+            nn.LayerNorm(dim_out),
+            nn.SiLU(),
+            nn.Linear(dim_out, dim_out)
+        )
+        
+        self.res_conn = nn.Linear(dim_in, dim_out) if dim_in != dim_out else nn.Identity()
+
+    def forward(self, x: torch.Tensor, cond_emb: torch.Tensor) -> torch.Tensor:
+        h = self.block1(x) + self.cond_proj(cond_emb)
+        h = self.block2(h)
+        return h + self.res_conn(x)
+
+# --- Main U-Net Model ---
+
+class VectorFieldUNet(nn.Module):
+    """
+    A U-Net architecture to predict a vector field v(xt, rating_condition) in a 512-dim latent space.
+    It replaces standard convolutions with Linear layers to operate on non-spatial vector data,
+    making it suitable for isotropic latent spaces like StyleGAN's W-space.
+    """
+    def __init__(
+        self,
+        model_dim: int = 512,
+        dim_mults: Sequence[int] = (1, 2, 4, 8),
+        condition_dim: int = 128
+    ):
+        """
+        Initializes the VectorFieldUNet.
+        Args:
+            model_dim (int): The dimension of the input and output latent vectors (e.g., 512 for StyleGAN W-space).
+            dim_mults (Sequence[int]): Divisors for feature dimensions at each level of the U-Net.
+                                       For example, (1, 2, 4, 8) with model_dim=512 will create levels with
+                                       dimensions [512, 256, 128, 64].
+            condition_dim (int): The dimension of the embedded rating condition vector.
+        """
+        super().__init__()
+        self.model_dim = model_dim
+        
+        # --- Rating Embedding ---
+        # Projects the scalar rating into a high-dimensional conditioning vector.
+        self.rating_emb = nn.Sequential(
+            SinusoidalPosEmb(condition_dim),
+            nn.Linear(condition_dim, condition_dim * 4),
+            nn.GELU(),
+            nn.Linear(condition_dim * 4, condition_dim)
+        )
+        
+        # --- U-Net Architecture ---
+        # Determine dimensions for each level of the U-Net
+        hidden_dims = [model_dim] + [model_dim // m for m in dim_mults]
+        
+        # --- Encoder ---
+        # Progressively reduces the feature dimension.
+        self.downs = nn.ModuleList()
+        for i in range(len(hidden_dims) - 1):
+            dim_in = hidden_dims[i]
+            dim_out = hidden_dims[i+1]
+            self.downs.append(nn.ModuleList([
+                ResnetBlock(dim_in, dim_in, cond_dim=condition_dim),
+                ResnetBlock(dim_in, dim_in, cond_dim=condition_dim),
+                nn.Linear(dim_in, dim_out) # Downsampling layer
+            ]))
+
+        # --- Bottleneck ---
+        # The central part of the U-Net with the lowest feature dimension.
+        bottleneck_dim = hidden_dims[-1]
+        self.bottleneck = nn.ModuleList([
+            ResnetBlock(bottleneck_dim, bottleneck_dim, cond_dim=condition_dim),
+            ResnetBlock(bottleneck_dim, bottleneck_dim, cond_dim=condition_dim)
+        ])
+
+        # --- Decoder ---
+        # Progressively increases the feature dimension, incorporating encoder features via skip connections.
+        self.ups = nn.ModuleList()
+        for i in range(len(hidden_dims) - 1, 0, -1):
+            dim_in_upsample = hidden_dims[i]
+            dim_out_upsample = hidden_dims[i-1]
+            # Input to the ResNet block will be the upsampled vector concatenated with the residual from the encoder.
+            resnet_in_dim = dim_out_upsample * 2
+            self.ups.append(nn.ModuleList([
+                nn.Linear(dim_in_upsample, dim_out_upsample), # Upsampling layer
+                ResnetBlock(resnet_in_dim, dim_out_upsample, cond_dim=condition_dim),
+                ResnetBlock(resnet_in_dim, dim_out_upsample, cond_dim=condition_dim),
+            ]))
+            
+        # --- Final Projection ---
+        # Final block to process the full-resolution features and project to the output vector field.
+        # It takes the concatenated output from the last decoder stage and the original input vector.
+        self.final_proj = nn.Sequential(
+            ResnetBlock(model_dim * 2, model_dim, cond_dim=condition_dim),
+            nn.Linear(model_dim, model_dim)
+        )
+        
+        # Initialize the final projection layer to output zeros at the start of training.
+        # This is a common practice for stability, ensuring the model starts by predicting no change.
+        nn.init.zeros_(self.final_proj[-1].weight)
+        nn.init.zeros_(self.final_proj[-1].bias)
+
+    def forward(self, x: torch.Tensor, ratings: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass for the VectorFieldUNet.
+        Args:
+            x (torch.Tensor): Input latent vectors `xt`, shape (B, 512).
+            ratings (torch.Tensor): Scalar ratings `f(xt)`, shape (B,) or (B, 1).
+        Returns:
+            torch.Tensor: Predicted tangential vector field `V_tangential`, shape (B, 512).
+        """
+        # Ensure input x is of the correct shape (B, model_dim)
+        if x.ndim == 3: x = x.squeeze(1)
+        assert x.ndim == 2 and x.shape[1] == self.model_dim, f"Input tensor x must have shape (B, {self.model_dim})"
+        
+        x_orig = x # Keep original for final global skip connection
+
+        # 1. Get rating conditioning vector
+        cond_emb = self.rating_emb(ratings)
+        
+        # 2. Encoder Path
+        residuals = []
+        h = x
+        for block1, block2, downsample in self.downs:
+            h = block1(h, cond_emb)
+            residuals.append(h)
+            
+            h = block2(h, cond_emb)
+            residuals.append(h)
+            
+            h = downsample(h)
+
+        # 3. Bottleneck Path
+        h = self.bottleneck[0](h, cond_emb)
+        h = self.bottleneck[1](h, cond_emb)
+
+        # 4. Decoder Path
+        for upsample, block1, block2 in self.ups:
+            h = upsample(h)
+            
+            # Concatenate with residual from the corresponding encoder level (skip connection)
+            h = torch.cat([h, residuals.pop()], dim=-1)
+            h = block1(h, cond_emb)
+            
+            # Concatenate with the second residual from the corresponding encoder level
+            h = torch.cat([h, residuals.pop()], dim=-1)
+            h = block2(h, cond_emb)
+
+        # 5. Final Projection
+        # Concatenate with the original input vector for a final global residual connection.
+        # This helps the model learn deviations from the identity.
+        h = torch.cat([h, x_orig], dim=-1)
+        
+        return self.final_proj(h)
+

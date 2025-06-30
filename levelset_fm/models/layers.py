@@ -82,24 +82,33 @@ class MeanRegressor(nn.Module):
 
     def forward(self, x):
         return self.network(x)
-
-
+    
 class EnsembleRegressor(nn.Module):
-    def __init__(self, models, scale=1):
+    """ Ensembles multiple models by averaging their outputs. """
+    def __init__(self, models, model_kwargs={}):
         super().__init__()
         self.models = nn.ModuleList(models)
-        self.scale = scale
+        if not models:
+            raise ValueError("Ensemble must contain at least one model.")
+        self.model_kwargs = model_kwargs
 
-
-    def forward(self, x, *args,**kwargs):
-        outputs = [model(x, *args,**kwargs) for model in self.models]
-        return torch.mean(torch.stack(outputs), dim=0)*self.scale
+    def forward(self, x, *args, **kwargs):
+        """ Averages the outputs of all models in the ensemble. """
+        # Collect outputs from each model
+        all_outputs = [model(x, *args, **(self.model_kwargs | kwargs)) for model in self.models]
+        # Stack outputs along a new dimension (dim=0)
+        stacked_outputs = torch.stack(all_outputs, dim=0)
+        # Compute the mean along the ensemble dimension (dim=0)
+        mean_output = torch.mean(stacked_outputs, dim=0)
+        return mean_output
 
 
 class Flow(nn.Module):
-    def __init__(self, latent_dim=512, output_dim=512, time_varying=True):
+    def __init__(self, latent_dim=512, output_dim=512, time_varying=True, w_avg=None):
         super().__init__()
         self.w_avg = w_avg
+        if w_avg is not None:
+            self.w_avg = w_avg.to(self.device)
 
 
         self.head = nn.Sequential(
@@ -130,7 +139,8 @@ class Flow(nn.Module):
         )
 
     def forward(self, x):
-        x = x - self.w_avg
+        if self.w_avg is not None:
+            x = x - self.w_avg
         x = self.network(x)
         x = self.head(x)
         return x
@@ -157,57 +167,6 @@ class Exponent(nn.Module):
         return torch.cat([out1, out2], dim=-1)
 
 
-
-class AlphaBetaRegressor(nn.Module):
-    def __init__(self, dim):
-        super().__init__()
-        self.w_avg = get_w_avg().detach()
-
-
-        self.head = nn.Sequential(
-            nn.Linear(512, 2),
-        )
-        self.network = nn.Sequential(
-            nn.Linear(512, dim),
-            nn.BatchNorm1d(dim),
-            nn.ReLU(),
-
-            nn.Linear(dim, dim*2),
-            nn.BatchNorm1d(dim*2),
-            nn.ReLU(),
-            nn.Dropout(0.1),
-
-            nn.Linear(dim*2, dim*4),
-            nn.BatchNorm1d(dim*4),
-            nn.ReLU(),
-            nn.Dropout(0.2),
-
-            nn.Linear(dim*4, 512),
-            nn.BatchNorm1d(512),
-            nn.ReLU(),
-            nn.Linear(512, 512),
-        )
-        self.output = "a,b"  # "mean", "mean+var"
-        self.equations = {
-            "a,b": lambda x: x,
-            "mean": self.mean,
-            "mean+var": lambda x: self.mean(x)
-        }
-
-    def forward(self, x, output=None):
-        if output is None:
-            output = self.output
-        x = x - self.w_avg
-        x = self.network(x)
-        x = self.head(x)
-        x = Exponent()(x)
-        return self.equations[output](x)
-
-    def mean(self, x):
-        return (x[:, 0]/(x[:, 0]+x[:, 1])).view(-1, 1)
-    
-
-
 # Model Definition
 import torch
 from torch import nn
@@ -231,9 +190,13 @@ class SigmoExpo(nn.Module):
 
 # Custom Dataset
 class LatentDataset(Dataset):
-    def __init__(self, latents, targets):
-        self.latents = torch.tensor(latents, dtype=torch.float32).to(device)
-        self.targets = torch.tensor(targets, dtype=torch.float32).to(device)
+    def __init__(self, latents, targets, device):
+        self.latents = torch.tensor(latents, dtype=torch.float32)
+        self.targets = torch.tensor(targets, dtype=torch.float32)
+        if device is not None:
+            self.latents = self.latents.to(device)
+            self.targets = self.targets.to(device)
+
 
     def __len__(self):
         return len(self.latents)

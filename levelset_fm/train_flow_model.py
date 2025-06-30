@@ -19,7 +19,7 @@ from configs import config
 from data.dataset import OTDataset, get_dataloader
 from data.data_utils import calculate_cost_multiplier # For dynamic cost calculation
 from models.flow_model import VectorFieldTransformer # Flow model definition
-from models.trust_model import load_trust_model_ensemble # To load pre-trained trust model
+from levelset_fm.models.rating_model import load_trust_model_ensemble # To load pre-trained trust model
 from utils.flow_utils import sample_conditional_pt, compute_conditional_vector_field
 from utils.checkpoint_utils import save_flow_checkpoint, load_flow_checkpoint
 from utils.general_utils import print_gpu_memory

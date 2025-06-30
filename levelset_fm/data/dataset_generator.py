@@ -290,7 +290,7 @@ def load_and_stack_by_age(
     base_model.to(device) # Ensure trust model is on correct device
 
     # Need age model to sort final data
-    from models.trust_model import load_control_models # Assuming control models load function exists
+    from levelset_fm.models.rating_model import load_control_models # Assuming control models load function exists
     control_models = load_control_models(config.CONTROL_MODEL_PATH_TEMPLATE, config.CONTROL_MODEL_NAMES, device)
     age_model = control_models[2] # Assuming index 2 is age
 
@@ -458,7 +458,7 @@ def run_dataset_generation_pipeline(dim_name=config.TARGET_DIMENSION, device=con
     # 1. Load Models needed for generation
     print("Loading models...")
     G, _ = load_stylegan_G(device=device)
-    from models.trust_model import load_trust_model_ensemble, load_control_models # Need these functions
+    from levelset_fm.models.rating_model import load_trust_model_ensemble, load_control_models # Need these functions
     trust_model = load_trust_model_ensemble(config.TARGET_DIMENSION, config.TRUST_MODEL_ENSEMBLE_SIZE, config.CHECKPOINT_DIR_TRUST, device=device)
     control_models = load_control_models(config.CONTROL_MODEL_PATH_TEMPLATE, config.CONTROL_MODEL_NAMES, device)
     age_model = control_models[2]

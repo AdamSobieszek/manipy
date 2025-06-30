@@ -4,3 +4,6 @@
 **/runs/*
 **/wandb/*
 /appendix/*
+/flow_checkpoints/*
+/data/
+*_final_final_final.pt
