@@ -11,6 +11,22 @@ from torchvision.transforms import Compose, Resize, ToTensor, Normalize
 import torch
 import torchvision.transforms.functional as TF
 import pandas as pd
+from PIL import Image, ImageDraw, ImageFont
+from PIL import ImageFont
+import urllib.request
+import functools
+import io
+
+import requests
+from io import BytesIO
+
+from PIL import Image, ImageDraw, ImageFont
+import requests
+from io import BytesIO
+from PIL import Image, ImageDraw, ImageFont
+import os
+import cv2
+
 
 def listify(x):
     """
@@ -91,7 +107,31 @@ def dot_product(x, y):
     y_norm = y[1] if len(y.shape) > 1 else y
     return np.dot(x_norm / np.linalg.norm(x_norm), y_norm / np.linalg.norm(y_norm))
 
-def read(target, passthrough=True):
+def reshape_to_18(target, is_w=False, truncation_psi=1, _G=None):
+    global G
+    if _G is None and 'G' in globals():
+        _G = G
+    if len(target.shape) == 1:
+        target = target.view(1,-1)
+
+    
+    if len(target.shape) == 2:
+        target = target.view(-1, 1, 512)
+
+
+    if target.shape[1] != 18:
+        target = target.repeat(1,18,1)
+
+    if not is_w and _G is not None:
+        norms_target = target.norm(dim=-1).mean(dim=-1)
+        is_z = norms_target>20
+        if any(is_z):
+            target[is_z] = _G.mapping(target[is_z].mean(dim=1), None, truncation_psi=truncation_psi)
+
+    return target
+
+
+def read(target, passthrough=True, device='mps', is_w=False, truncation_psi=1, _G=None):
     """
     Transforms a path or array of coordinates into a standard format.
 
@@ -102,22 +142,37 @@ def read(target, passthrough=True):
     Returns:
         Transformed target or original target based on passthrough.
     """
+    global G
+    if _G is None and 'G' in globals():
+        _G = G
+    device = device or _G.mapping.w_avg.device
+    
     if target is None:
         return 0
     if isinstance(target, PIL.Image.Image):
         return None
+    
     if isinstance(target, str):
-        try:
-            target = np.load(target)
-        except:
-            return target if passthrough else None
-    if list(target.shape) == [1, 18, 512] or target.shape[0] == 18 or passthrough:
-        return target
-    if target.shape[0] in [1, 512]:
-        return np.tile(target, (18, 1)) if isinstance(target, np.ndarray) else torch.tile(target, (18, 1))
+        if target.endswith('.npy'):
+            return torch.tensor(np.load(target), map_location=device)
+        elif target.endswith('.pt'):
+            return torch.load(target, map_location=device)
+        else:
+            raise ValueError(f"Unknown file type: {target}")
+        
+    if isinstance(target, np.ndarray):
+        target = torch.tensor(target, device=device)
+    if not isinstance(target, torch.Tensor):
+        raise ValueError(f"Unknown target type: {type(target)}")
+    
+
+    if not len(target.shape) == 3 or target.shape[0] != 18:
+        target = reshape_to_18(target, is_w=is_w, truncation_psi=truncation_psi, _G=_G)
+
+
     return target
 
-def show_faces(target, add=None, subtract=False, plot=True, grid=True, rows=1, labels = None, device='mps'):
+def show_faces(target, add=None, subtract=True, plot=True, grid=True, rows=1, labels = None, device='mps', is_w=False, verbose=False, truncation_psi=1, _G=None):
     """
     Displays or returns images of faces generated from latent vectors.
 
@@ -134,24 +189,26 @@ def show_faces(target, add=None, subtract=False, plot=True, grid=True, rows=1, l
     Returns:
         PIL images or None, depending on the 'plot' argument.
     """
+    global G
+    
+    if _G is None and 'G' in globals():
+        _G = G
+    device = device or _G.mapping.w_avg.device
+
     transform = Compose([
         Resize(512),
         lambda x: torch.clamp((x + 1) / 2, min=0, max=1)
     ])
 
-    target, add = listify(target), listify(add)
-    to_generate = [read(t, False) for t in target if read(t, False) is not None]
+    target, add, subtract = listify(target), listify(add), listify(subtract)
+    to_generate = [read(t, False, device, is_w=is_w, truncation_psi=truncation_psi) for t in target if read(t, False) is not None]
 
     if add[0] is not None:
-        if len(add) == len(target):
-            to_generate_add = [t + read(a) for t, a in zip(target, add)]
-            to_generate_sub = [t - read(a) for t, a in zip(target, add)]
-        else:
-            to_generate_add = [t + read(add[0]) for t in target]
-            to_generate_sub = [t - read(add[0]) for t in target]
+        to_generate_add = [t + read(v, False, device, is_w=True) for t in to_generate for v in add]
+        to_generate_sub = [t - read(v, False, device, is_w=True) for t in to_generate for v in add]
         to_generate = [m for pair in zip(to_generate_sub, to_generate, to_generate_add) for m in pair] if subtract else [m for pair in zip(to_generate, to_generate_add) for m in pair]
 
-    other = [PIL.Image.open(t) for t in target if isinstance(t, str) and not '.npy' in t]
+    other = [PIL.Image.open(t) for t in target if isinstance(t, str) and not '.npy' in t and not '.pt' in t]
     other += [t for t in target if isinstance(t, PIL.Image.Image)]
     for im in target:
         try:
@@ -161,10 +218,14 @@ def show_faces(target, add=None, subtract=False, plot=True, grid=True, rows=1, l
 
     images_pil = []
     if len(to_generate) > 0:
-        global G
+        if _G is None:
+            raise ValueError("G is not set")
+        
+        to_generate = torch.cat(to_generate, dim=0).to(device)
+        
         with torch.no_grad():
-            face_w = torch.tensor(to_generate, device=device)
-            images = G.synthesis(face_w.view(-1, 18, 512)).cpu()
+            assert len(to_generate)<=32, "Too many faces to generate"
+            images = _G.synthesis(to_generate.view(-1, 18, 512)).cpu()
             images_pil = [TF.to_pil_image(transform(im)) for im in images]
 
     images_pil += [(t) for t in other]
@@ -173,22 +234,6 @@ def show_faces(target, add=None, subtract=False, plot=True, grid=True, rows=1, l
         display_images(images_pil, grid, rows, labels=labels)
     else:
         return create_image_grid(images_pil, rows=rows) if grid else images_pil
-
-from PIL import Image, ImageDraw, ImageFont
-from PIL import ImageFont
-import urllib.request
-import functools
-import io
-
-import requests
-from io import BytesIO
-
-from PIL import Image, ImageDraw, ImageFont
-import requests
-from io import BytesIO
-from PIL import Image, ImageDraw, ImageFont
-import os
-import cv2
 
 
 def add_label_to_image(image, label, position=(10, 10), font_size=20):
@@ -257,3 +302,14 @@ def display_images(images, grid, rows, labels):
             plt.axis('off')
             plt.show()
 
+def sample_w(n, truncation_psi=1, device=None, _G=None):
+    """Samples N latent vectors (w) that pass certain filter criteria."""
+    global G
+    if _G is None and 'G' in globals():
+        _G = G
+    device = device or _G.mapping.w_avg.device
+
+    with torch.no_grad():
+        all_z = torch.randn([n, 512], device=device)
+        all_w = _G.mapping(all_z, None, truncation_psi=truncation_psi)[:, 0]
+        return all_w
