@@ -1,0 +1,71 @@
+[build-system]
+requires = ["setuptools>=69", "wheel", "build"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "manipy"
+version = "0.1.9"
+description = "Latent-space manipulation utilities and models (StyleGAN, flow matching, ratings)."
+readme = "README.md"
+authors = [
+  { name = "Masked review" }
+]
+requires-python = ">=3.9"
+keywords = ["stylegan", "latent-space", "flow-matching", "pytorch", "computer-vision"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+  "numpy>=1.22",
+  "torch>=2.1",
+  "tqdm>=4.65",
+  "einops>=0.6",
+  "x-transformers>=1.30",
+]
+
+[project.urls]
+Homepage = "https://pypi.org/project/manipy/"
+
+[project.optional-dependencies]
+viz = [
+  "matplotlib>=3.7",
+  "Pillow>=9.0",
+  "opencv-python>=4.7",
+  "ipython>=8.0",
+  "torchvision>=0.16",
+  "pandas>=2.0",
+]
+stylegan = [
+  "requests>=2.31",
+  "torchvision>=0.16",
+  "opencv-python>=4.7",
+  "Pillow>=9.0",
+  "ipython>=8.0",
+]
+train = [
+  "scipy>=1.10",
+  "scikit-learn>=1.3",
+]
+
+[tool.setuptools]
+packages = [
+  "manipy",
+  "manipy.data",
+  "manipy.models",
+  "manipy.stylegan",
+  "manipy.utils",
+  "manipy.optimal_transport",
+  "manipy.metrics",
+  "manipy.plot",
+  "manipy.scripts",
+  "manipy.dist"
+]
+
+[tool.setuptools.package-dir]
+manipy = "manipy"
+
+[tool.setuptools.exclude-package-data]
+"*" = ["__pycache__", "*.pyc", "*.pyo", "*.pyd"]

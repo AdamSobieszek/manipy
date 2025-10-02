@@ -7,3 +7,16 @@
 /flow_checkpoints/*
 /data/
 *_final_final_final.pt
+
+**/*.jpg
+**/*.jpeg
+**/*.png
+**/*.webp
+**/*.pt
+**/*.npz
+**/*.npy
+**/*.pkl
+**/*.pth
+**/*.pt
+**/events.out.tfevents*
+**/*.zip

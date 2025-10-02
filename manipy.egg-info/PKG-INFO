@@ -1,0 +1,60 @@
+Metadata-Version: 2.4
+Name: manipy
+Version: 0.1.9
+Summary: Latent-space manipulation utilities and models (StyleGAN, flow matching, ratings).
+Author: Adam Sobieszek
+Project-URL: Homepage, https://github.com/AdamSobieszek/manipy
+Keywords: stylegan,latent-space,flow-matching,pytorch,computer-vision
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Topic :: Scientific/Engineering :: Artificial Intelligence
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+Requires-Dist: numpy>=1.22
+Requires-Dist: torch>=2.1
+Requires-Dist: tqdm>=4.65
+Requires-Dist: einops>=0.6
+Requires-Dist: x-transformers>=1.30
+Provides-Extra: viz
+Requires-Dist: matplotlib>=3.7; extra == "viz"
+Requires-Dist: Pillow>=9.0; extra == "viz"
+Requires-Dist: opencv-python>=4.7; extra == "viz"
+Requires-Dist: ipython>=8.0; extra == "viz"
+Requires-Dist: torchvision>=0.16; extra == "viz"
+Requires-Dist: pandas>=2.0; extra == "viz"
+Provides-Extra: stylegan
+Requires-Dist: requests>=2.31; extra == "stylegan"
+Requires-Dist: torchvision>=0.16; extra == "stylegan"
+Requires-Dist: opencv-python>=4.7; extra == "stylegan"
+Requires-Dist: Pillow>=9.0; extra == "stylegan"
+Requires-Dist: ipython>=8.0; extra == "stylegan"
+Provides-Extra: train
+Requires-Dist: scipy>=1.10; extra == "train"
+Requires-Dist: scikit-learn>=1.3; extra == "train"
+
+# manipy
+
+Latent-space manipulation utilities and models for StyleGAN-based workflows:
+
+- Flow models for manipulating W-space along psychometric dimensions
+- Rating models trained on human ratings
+- Utilities for visualization and StyleGAN interaction
+
+Install from source:
+
+```bash
+pip install .
+```
+
+Build locally:
+
+```bash
+python -m build
+```
+
+Optional extras: `viz`, `stylegan`, `train`.
+
+```bash
+pip install "manipy[viz,stylegan,train]"
+```

@@ -16,9 +16,9 @@ import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
 
 # Assuming these local modules are in the python path
-from levelset_fm.models.flow_model import VectorFieldTransformer, VectorFieldModel, RatingODE
-from levelset_fm.models.rating_model import EnsembleRegressor
-from levelset_fm.models.layers import AlphaBetaRegressor
+from full_manipy.models.flow_models import VectorFieldTransformer, VectorFieldModel, RatingODE
+from full_manipy.models.rating_models import EnsembleRegressor
+from full_manipy.models.layers import AlphaBetaRegressor
 
 
 # --- Visualization Function ---

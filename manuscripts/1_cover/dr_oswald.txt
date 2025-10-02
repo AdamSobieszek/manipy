@@ -1,0 +1,34 @@
+Dr. Fred Oswald, Editor
+Psychological Methods
+American Psychological Association
+Dear Dr. Oswald,
+We are pleased to submit our manuscript, "Theory of Optimal Experimental Manipulation with Generative Models via Reverse Correlation of Stimuli," for consideration in Psychological Methods. This work introduces a full formal framework and a novel computational method to address the critical challenge of creating valid, specific, and ecologically valid experimental stimuli using generative AI models.
+
+The work was motivated by (a) the profound opportunity the capacity of modern generative models presents for researchers to vary a specific evoked psychological impression within an experimental manipulation, and (b) the experimentally observed limited ability of existing reverse correlation approaches to accomplish this task. The result of this four year effort to build up the missing theoretical, methodological, and experimental foundations is:
+
+1) Theoretical—identify and fill the missing mathematical foundations for reverse correlation:
+   a) Define formal optimality criteria for manipulation directions, distinguish them from the more complex criteria for full manipulation paths, that lead to a new distributional constraint necessary for achieving orthogonal manipulation.
+   b) Show how these much more complex criteria can be captured with a novel connection to mathematics of gradient flows, optimal transport, and distribution flow matching.
+   b) Identify the class of generative models whose feature spaces possess the necessary geometric properties that make optimal manipulation directions identifiable; determine that the gradient of the mean impression exists within such spaces, is this locally optimal for manipulation, and is psychometrically estimable.
+   c) Derive, as a function of this optimal direction, the estimands of choice- and noise-based reverse correlation, linear models, and morphing approaches.
+
+2) Methodological—develop the tools and algorithms to satisfy the theoretical requirements and bring open manipulation methods into the age of neural networks:
+   a) Provide the first open-source, state-of-the-art neural network prediction models for 28 face impressions.
+   b) Introduce our Psychometric Gradient Flow Matching (PGFM) algorithm, which learns optimal manipulation paths that satisfy controlled-variable constraints.
+   c) Introduce the Model Classification Image (MCI) to visualize stereotypes encoded in impression models for arbitrary categories (e.g., trustworthiness for faces categorized as old, white, and male).
+   d) Release trained models, stimuli, and code to facilitate future research.
+
+3) Empirical. In four studies (N_total = 1,026):
+   a) Demonstrate the effectiveness of linear, gradient, and PGFM approaches in changing between-subject impressions, controlling confounding factors, and preserving ecological validity.
+   b) Show that PGFM can reliably increase valence-laden impressions (trustworthiness, attractiveness) while constraining apparent age and gender—cases that stumped prior methods.
+
+We see a troubling trend in AI methods in psychology of not releasing the models and data needed to use and build upon findings. Partly for this reason we chose to conduct our validations on face impressions of the high-quality One Million Impressions dataset, as our work would provide the first publicly available impression models and manipulation methods for these widely applicable psychological dimensions. We believe this work will enable experimental researchers across social, cognitive, clinical, and emotion psychology to conduct experiments and design diagnostic tests that were previously impossible.
+
+We believe psychological science needs to stay ahead of the developments in AI. We aimed to aid this goal to proceed in an open, principled, and responsible way. The scope of the work is extensive—we have chosen to consolidate all these advancements into a single, comprehensive work that could serve as a future field reference, which we hope can fit into the canon of other novel works published in Psychological Methods. 
+
+We confirm that this manuscript is not under review elsewhere. All research was conducted in accordance with appropriate ethical guidelines. We are eligible for the Open Data and Open Materials badges, as all stimuli, models, data, and code are publicly available on our Open Science Framework repository (https://osf.io/2xsn7/?view_only=892c516b19654487a6e6f2bc2734d715).
+Thank you for your time and consideration. We are confident that this work offers the kind of fundamental methodological advance that is of core interest to the readers of Psychological Methods.
+Sincerely,
+Adam Sobieszek
+Maciej Siemiątkowski
+University of Warsaw, Faculty of Psychology
