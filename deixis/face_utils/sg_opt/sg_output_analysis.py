@@ -27,10 +27,12 @@ class FeatureExtractor(nn.Module):
         self.proj = proj if proj is not None else _IdentityPool()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = x.squeeze(2)
         y = self.trunk(x)
         if isinstance(y, (list, tuple)):
             y = y[-1]
         # if feature map, global-average pool
+        print(y.shape)
         if y.ndim == 4:
             y = torch.flatten(F.adaptive_avg_pool2d(y, 1), 1)
         y = self.pool(y)
@@ -45,11 +47,26 @@ def build_feature_extractor(name: str, device: torch.device | str = "cpu") -> Fe
     """
     n = name.lower()
 
-    if n == "vgg16":
+    if n == "vgg16_512":
         from torchvision.models import vgg16, VGG16_Weights
         m = vgg16(weights=VGG16_Weights.IMAGENET1K_V1).features[:23]  # conv3_3
         return FeatureExtractor(nn.Sequential(m)).to(device).eval()
-
+        
+    if n == "vgg16":
+        from torchvision.models import vgg16, VGG16_Weights
+        m = vgg16(weights=VGG16_Weights.IMAGENET1K_V1)
+        # Classic VGG: features → (7x7) → flatten → fc6(4096) → ReLU → fc7(4096) → ReLU
+        trunk = nn.Sequential(
+            m.features,
+            nn.AdaptiveAvgPool2d((7, 7)),
+            nn.Flatten(1),
+            m.classifier[0],            # Linear 25088 -> 4096 (fc6)
+            nn.ReLU(inplace=False),
+            m.classifier[3],            # Linear 4096 -> 4096 (fc7)
+            nn.ReLU(inplace=False),
+        )
+        return FeatureExtractor(trunk).to(device).eval()
+        
     if n == "resnet50":
         from torchvision.models import resnet50, ResNet50_Weights
         m = resnet50(weights=ResNet50_Weights.IMAGENET1K_V2)

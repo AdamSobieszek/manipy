@@ -18,7 +18,7 @@ import torch
 import dnnlib
 import legacy
 from metrics import metric_main
-from metrics import metric_utils
+from metric_utils import metric_utils
 from torch_utils import training_stats
 from torch_utils import custom_ops
 from torch_utils import misc

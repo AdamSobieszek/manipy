@@ -68,6 +68,7 @@ def launch_training(c, desc, outdir, dry_run):
     print()
     print(f'Output directory:    {c.run_dir}')
     print(f'Number of GPUs:      {c.num_gpus}')
+    print(f'Device type:         {c.device_type}')
     print(f'Batch size:          {c.batch_size} images')
     print(f'Training duration:   {c.total_kimg} kimg')
     print(f'Dataset path:        {c.training_set_kwargs.path}')
@@ -125,9 +126,10 @@ def parse_comma_separated_list(s):
 
 # Required.
 @click.option('--outdir',       help='Where to save the results', metavar='DIR',                required=True)
-@click.option('--cfg',          help='Base configuration',                                      type=click.Choice(['stylegan3-t', 'stylegan3-r', 'stylegan2']), required=True)
+@click.option('--cfg',          help='Base configuration',                                      type=click.Choice(['stylegan3-t', 'stylegan3-r', 'stylegan2', 'stylegan2-mps']), required=True)
 @click.option('--data',         help='Training data', metavar='[ZIP|DIR]',                      type=str, required=True)
 @click.option('--gpus',         help='Number of GPUs to use', metavar='INT',                    type=click.IntRange(min=1), required=True)
+@click.option('--device',       help='Compute device to target', metavar='STR',                 type=click.Choice(['auto', 'cuda', 'mps', 'cpu']), default='auto', show_default=True)
 @click.option('--batch',        help='Total batch size', metavar='INT',                         type=click.IntRange(min=1), required=True)
 @click.option('--gamma',        help='R1 regularization weight', metavar='FLOAT',               type=click.FloatRange(min=0), required=True)
 
@@ -186,13 +188,39 @@ def main(**kwargs):
 
     # Initialize config.
     opts = dnnlib.EasyDict(kwargs) # Command line arguments.
+    stylegan2_like = opts.cfg in ['stylegan2', 'stylegan2-mps']
+
+    # Resolve target device.
+    if opts.device == 'auto':
+        if opts.cfg == 'stylegan2-mps':
+            device_type = 'mps'
+        elif torch.cuda.is_available():
+            device_type = 'cuda'
+        elif torch.backends.mps.is_available():
+            device_type = 'mps'
+        else:
+            device_type = 'cpu'
+    else:
+        device_type = opts.device
+
+    if device_type == 'cuda' and not torch.cuda.is_available():
+        raise click.ClickException('Requested CUDA device but torch.cuda.is_available() returned False')
+    if device_type == 'mps' and not torch.backends.mps.is_available():
+        raise click.ClickException('Requested MPS device but torch.backends.mps.is_available() returned False')
+    if opts.cfg == 'stylegan2-mps':
+        if opts.gpus != 1:
+            raise click.ClickException('stylegan2-mps configuration requires --gpus=1')
+        if device_type != 'mps':
+            raise click.ClickException('stylegan2-mps configuration requires --device=mps or --device=auto with MPS available')
+
     c = dnnlib.EasyDict() # Main config dict.
+    c.device_type = device_type
     c.G_kwargs = dnnlib.EasyDict(class_name=None, z_dim=512, w_dim=512, mapping_kwargs=dnnlib.EasyDict())
     c.D_kwargs = dnnlib.EasyDict(class_name='training.networks_stylegan2.Discriminator', block_kwargs=dnnlib.EasyDict(), mapping_kwargs=dnnlib.EasyDict(), epilogue_kwargs=dnnlib.EasyDict())
     c.G_opt_kwargs = dnnlib.EasyDict(class_name='torch.optim.Adam', betas=[0,0.99], eps=1e-8)
     c.D_opt_kwargs = dnnlib.EasyDict(class_name='torch.optim.Adam', betas=[0,0.99], eps=1e-8)
     c.loss_kwargs = dnnlib.EasyDict(class_name='training.loss.StyleGAN2Loss')
-    c.data_loader_kwargs = dnnlib.EasyDict(pin_memory=True, prefetch_factor=2)
+    c.data_loader_kwargs = dnnlib.EasyDict(pin_memory=(device_type == 'cuda'), prefetch_factor=2)
 
     # Training set.
     c.training_set_kwargs, dataset_name = init_dataset_kwargs(data=opts.data)
@@ -207,11 +235,11 @@ def main(**kwargs):
     c.batch_gpu = opts.batch_gpu or opts.batch // opts.gpus
     c.G_kwargs.channel_base = c.D_kwargs.channel_base = opts.cbase
     c.G_kwargs.channel_max = c.D_kwargs.channel_max = opts.cmax
-    c.G_kwargs.mapping_kwargs.num_layers = (8 if opts.cfg == 'stylegan2' else 2) if opts.map_depth is None else opts.map_depth
+    c.G_kwargs.mapping_kwargs.num_layers = (8 if stylegan2_like else 2) if opts.map_depth is None else opts.map_depth
     c.D_kwargs.block_kwargs.freeze_layers = opts.freezed
     c.D_kwargs.epilogue_kwargs.mbstd_group_size = opts.mbstd_group
     c.loss_kwargs.r1_gamma = opts.gamma
-    c.G_opt_kwargs.lr = (0.002 if opts.cfg == 'stylegan2' else 0.0025) if opts.glr is None else opts.glr
+    c.G_opt_kwargs.lr = (0.002 if stylegan2_like else 0.0025) if opts.glr is None else opts.glr
     c.D_opt_kwargs.lr = opts.dlr
     c.metrics = opts.metrics
     c.total_kimg = opts.kimg
@@ -232,7 +260,7 @@ def main(**kwargs):
 
     # Base configuration.
     c.ema_kimg = c.batch_size * 10 / 32
-    if opts.cfg == 'stylegan2':
+    if stylegan2_like:
         c.G_kwargs.class_name = 'training.networks_stylegan2.Generator'
         c.loss_kwargs.style_mixing_prob = 0.9 # Enable style mixing regularization.
         c.loss_kwargs.pl_weight = 2 # Enable path length regularization.
@@ -244,7 +272,7 @@ def main(**kwargs):
         c.G_kwargs.magnitude_ema_beta = 0.5 ** (c.batch_size / (20 * 1e3))
         if opts.cfg == 'stylegan3-r':
             c.G_kwargs.conv_kernel = 1 # Use 1x1 convolutions.
-            c.G_kwargs.channel_base *= 2 # Double the number of feature maps.
+            c.G_kwargs.channel_base *= 2 # Double the number of feature maps. 
             c.G_kwargs.channel_max *= 2
             c.G_kwargs.use_radial_filters = True # Use radially symmetric downsampling filters.
             c.loss_kwargs.blur_init_sigma = 10 # Blur the images seen by the discriminator.
@@ -273,7 +301,7 @@ def main(**kwargs):
         c.cudnn_benchmark = False
 
     # Description string.
-    desc = f'{opts.cfg:s}-{dataset_name:s}-gpus{c.num_gpus:d}-batch{c.batch_size:d}-gamma{c.loss_kwargs.r1_gamma:g}'
+    desc = f'{opts.cfg:s}-{dataset_name:s}-gpus{c.num_gpus:d}-batch{c.batch_size:d}-gamma{c.loss_kwargs.r1_gamma:g}-dev{c.device_type}'
     if opts.desc is not None:
         desc += f'-{opts.desc}'
 

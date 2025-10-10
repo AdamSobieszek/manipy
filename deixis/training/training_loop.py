@@ -120,16 +120,31 @@ def training_loop(
     cudnn_benchmark         = True,     # Enable torch.backends.cudnn.benchmark?
     abort_fn                = None,     # Callback function for determining whether to abort training. Must return consistent results across ranks.
     progress_fn             = None,     # Callback function for updating training progress. Called for all ranks.
+    device_type             = 'cuda',   # Torch device type to use for training.
 ):
     # Initialize.
     start_time = time.time()
-    device = torch.device('cuda', rank)
+    device_type = device_type or 'cuda'
+    if device_type == 'cuda':
+        device = torch.device('cuda', rank)
+    elif device_type == 'mps':
+        device = torch.device('mps')
+    elif device_type == 'cpu':
+        device = torch.device('cpu')
+    else:
+        device = torch.device(device_type)
+    use_cuda = (device.type == 'cuda')
     np.random.seed(random_seed * num_gpus + rank)
     torch.manual_seed(random_seed * num_gpus + rank)
-    torch.backends.cudnn.benchmark = cudnn_benchmark    # Improves training speed.
-    torch.backends.cuda.matmul.allow_tf32 = False       # Improves numerical accuracy.
-    torch.backends.cudnn.allow_tf32 = False             # Improves numerical accuracy.
-    conv2d_gradfix.enabled = True                       # Improves training speed.
+    if use_cuda and torch.backends.cudnn.is_available():
+        torch.backends.cudnn.benchmark = cudnn_benchmark    # Improves training speed.
+        torch.backends.cudnn.allow_tf32 = False             # Improves numerical accuracy.
+    else:
+        torch.backends.cudnn.benchmark = False
+    if hasattr(torch.backends, 'cuda'):
+        if hasattr(torch.backends.cuda, 'matmul'):
+            torch.backends.cuda.matmul.allow_tf32 = False
+    conv2d_gradfix.enabled = use_cuda                   # Improves training speed.
     grid_sample_gradfix.enabled = True                  # Avoids errors with the augmentation pipe.
 
     # Load training set.
@@ -207,7 +222,7 @@ def training_loop(
     for phase in phases:
         phase.start_event = None
         phase.end_event = None
-        if rank == 0:
+        if rank == 0 and use_cuda:
             phase.start_event = torch.cuda.Event(enable_timing=True)
             phase.end_event = torch.cuda.Event(enable_timing=True)
 
@@ -332,9 +347,25 @@ def training_loop(
         fields += [f"sec/kimg {training_stats.report0('Timing/sec_per_kimg', (tick_end_time - tick_start_time) / (cur_nimg - tick_start_nimg) * 1e3):<7.2f}"]
         fields += [f"maintenance {training_stats.report0('Timing/maintenance_sec', maintenance_time):<6.1f}"]
         fields += [f"cpumem {training_stats.report0('Resources/cpu_mem_gb', psutil.Process(os.getpid()).memory_info().rss / 2**30):<6.2f}"]
-        fields += [f"gpumem {training_stats.report0('Resources/peak_gpu_mem_gb', torch.cuda.max_memory_allocated(device) / 2**30):<6.2f}"]
-        fields += [f"reserved {training_stats.report0('Resources/peak_gpu_mem_reserved_gb', torch.cuda.max_memory_reserved(device) / 2**30):<6.2f}"]
-        torch.cuda.reset_peak_memory_stats()
+        if use_cuda:
+            peak_alloc = torch.cuda.max_memory_allocated(device) / 2**30
+            peak_reserved = torch.cuda.max_memory_reserved(device) / 2**30
+            fields += [f"gpumem {training_stats.report0('Resources/peak_gpu_mem_gb', peak_alloc):<6.2f}"]
+            fields += [f"reserved {training_stats.report0('Resources/peak_gpu_mem_reserved_gb', peak_reserved):<6.2f}"]
+            torch.cuda.reset_peak_memory_stats()
+        elif device.type == 'mps' and hasattr(torch, 'mps'):
+            current_alloc_fn = getattr(torch.mps, 'current_allocated_memory', None)
+            driver_alloc_fn = getattr(torch.mps, 'driver_allocated_memory', None)
+            reset_peak_fn = getattr(torch.mps, 'reset_peak_memory_stats', None)
+            peak_alloc = (current_alloc_fn() if callable(current_alloc_fn) else 0) / 2**30
+            peak_reserved = (driver_alloc_fn() if callable(driver_alloc_fn) else peak_alloc) / 2**30
+            fields += [f"gpumem {training_stats.report0('Resources/peak_gpu_mem_gb', peak_alloc):<6.2f}"]
+            fields += [f"reserved {training_stats.report0('Resources/peak_gpu_mem_reserved_gb', peak_reserved):<6.2f}"]
+            if callable(reset_peak_fn):
+                reset_peak_fn()
+        else:
+            fields += [f"gpumem {training_stats.report0('Resources/peak_gpu_mem_gb', 0.0):<6.2f}"]
+            fields += [f"reserved {training_stats.report0('Resources/peak_gpu_mem_reserved_gb', 0.0):<6.2f}"]
         fields += [f"augment {training_stats.report0('Progress/augment', float(augment_pipe.p.cpu()) if augment_pipe is not None else 0):.3f}"]
         training_stats.report0('Timing/total_hours', (tick_end_time - start_time) / (60 * 60))
         training_stats.report0('Timing/total_days', (tick_end_time - start_time) / (24 * 60 * 60))

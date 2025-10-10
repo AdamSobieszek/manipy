@@ -16,6 +16,7 @@ from . import metric_utils
 
 #----------------------------------------------------------------------------
 
+@torch.no_grad()
 def compute_distances(row_features, col_features, num_gpus, rank, col_batch_size):
     assert 0 <= rank < num_gpus
     num_cols = col_features.shape[0]
@@ -32,7 +33,7 @@ def compute_distances(row_features, col_features, num_gpus, rank, col_batch_size
     return torch.cat(dist_batches, dim=1)[:, :num_cols] if rank == 0 else None
 
 #----------------------------------------------------------------------------
-
+@torch.no_grad()
 def compute_pr(opts, max_real, num_gen, nhood_size, row_batch_size, col_batch_size):
     detector_url = 'https://api.ngc.nvidia.com/v2/models/nvidia/research/stylegan3/versions/1/files/metrics/vgg16.pkl'
     detector_kwargs = dict(return_features=True)

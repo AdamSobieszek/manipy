@@ -20,3 +20,11 @@
 **/*.pt
 **/events.out.tfevents*
 **/*.zip
+**/.cache/*
+**/.caches/*
+**/.DS_Store
+**/*.DS_Store
+**/.DS_Store
+.DS_Store
+deixis/face_utils/.assets
+discriminator/**/* 

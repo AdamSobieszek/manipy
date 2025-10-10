@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Iterable
 from argparse import ArgumentParser, HelpFormatter
 import torch
-
+ffimport = '''
 import facefusion.choices
 from facefusion import config, metadata, state_manager, wording
 from facefusion.common_helper import create_float_metavar, create_int_metavar, get_first, get_last
@@ -28,7 +28,11 @@ try:
     from facefusion import face_landmarker  # may not exist in some builds
     _HAS_LANDMARKER = True
 except Exception:
-    _HAS_LANDMARKER = False
+    _HAS_LANDMARKER = False'''
+try:
+ exec(ffimport)
+except Exception:
+    exec(ffimport.replace('facefusion', 'face_utils.facefusion'))
 
 
 def create_help_formatter_small(prog : str) -> HelpFormatter:
