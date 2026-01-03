@@ -1,0 +1,13 @@
+engine:
+  seed:
+  - 42
+  - 47
+optimizer:
+- beta2: 0.98
+  name: adamw_baseline
+- momentum: 0.5
+  name: sgd_baseline
+task:
+  name:
+  - mnist
+  - classification_small

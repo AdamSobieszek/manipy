@@ -1,0 +1,34 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="Page-1">
+    <mxGraphModel dx="753" dy="362" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="1" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="A" value="$A$" style="ellipse;whiteSpace=wrap;html=1;strokeColor=#000000;fillColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="120" y="90" width="40" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="B" value="$B$" style="ellipse;whiteSpace=wrap;html=1;strokeColor=#000000;fillColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="380" y="90" width="40" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="C" value="$C$" style="ellipse;whiteSpace=wrap;html=1;strokeColor=#000000;fillColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="120" y="260" width="40" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="D" value="$D$" style="ellipse;whiteSpace=wrap;html=1;strokeColor=#000000;fillColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="380" y="260" width="40" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="e1" value="$f$" style="endArrow=classic;html=1;strokeColor=#000000;" edge="1" parent="1" source="A" target="B">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e2" value="$g$" style="endArrow=classic;html=1;strokeColor=#000000;" edge="1" parent="1" source="A" target="C">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e3" value="$h$" style="endArrow=classic;html=1;strokeColor=#000000;" edge="1" parent="1" source="B" target="D">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e4" value="$k$" style="endArrow=classic;html=1;strokeColor=#000000;" edge="1" parent="1" source="C" target="D">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

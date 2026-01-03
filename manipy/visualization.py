@@ -71,7 +71,9 @@ def create_image_grid(images, scale=1.0, rows=1):
 def add_label_to_image(image, label, position=(10, 10), font_size=20):
     """Adds a label with a black stroke to an image."""
     draw = ImageDraw.Draw(image)
-    font = get_font(font_size)
+    max_line_length = max(max(len(line) for line in label.split('\n')), 10)
+    scale_factor = 1000/max_line_length/21.0
+    font = get_font(int(font_size*scale_factor))
 
     # Get text size using textbbox
     try:

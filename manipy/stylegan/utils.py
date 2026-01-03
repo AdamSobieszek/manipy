@@ -27,6 +27,7 @@ from PIL import Image, ImageDraw, ImageFont
 import os
 import cv2
 from .core import setup_stylegan
+from ..visualization import get_font, add_label_to_image
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -404,6 +405,8 @@ def read(target, passthrough=True, device='mps', is_w=False, truncation_psi=1, _
             return torch.tensor(np.load(target), map_location=device)
         elif target.endswith('.pt'):
             return torch.load(target, map_location=device)
+        elif target.endswith('.jpg') or target.endswith('.png') or target.endswith('.jpeg'):
+            return (target, PIL.Image.open(target) )       
         else:
             raise ValueError(f"Unknown file type: {target}")
         
@@ -448,7 +451,11 @@ def show_faces(target, add=None, subtract=True, plot=True, grid=True, rows=1, la
     ])
 
     target, add, subtract = listify(target), listify(add), listify(subtract)
+
     to_generate = [read(t, False, device, is_w=is_w, truncation_psi=truncation_psi) for t in target if read(t, False) is not None]
+    loading_dict, to_generate = {t[0]: t[1] for t in to_generate if isinstance(t, tuple)}, [t for t in to_generate if not isinstance(t, tuple)]
+    target = [loading_dict.get(t, t) for t in target]
+
 
     if add[0] is not None:
         to_generate_add = [t + read(v, False, device, is_w=True) for t in to_generate for v in add]
@@ -482,41 +489,6 @@ def show_faces(target, add=None, subtract=True, plot=True, grid=True, rows=1, la
     else:
         return create_image_grid(images_pil, rows=rows) if grid else images_pil
 
-
-def add_label_to_image(image, label, position=(10, 10), font_size=20):
-    """
-    Adds a label with a black stroke to an image at the specified position.
-
-    Args:
-        image: PIL.Image object.
-        label: Text to add to the image.
-        position: Tuple specifying the position to place the text.
-        font_size: Size of the font.
-
-    Returns:
-        PIL.Image object with text added.
-    """
-    draw = ImageDraw.Draw(image)
-
-    # You can use a system font or a bundled .ttf file
-    font_path = os.path.join(cv2.__path__[0],'qt','fonts','DejaVuSans.ttf')
-    font = ImageFont.truetype(font_path, font_size)
-
-    # Get the bounding box for the text
-    bbox = draw.textbbox(position, label, font=font)
-    text_width, text_height = bbox[2] - bbox[0], bbox[3] - bbox[1]
-
-    # Adjust position based on the text height
-    position = (position[0], position[1] - text_height*.5)
-
-    # Outline (stroke) parameters
-    stroke_width = 2
-    stroke_fill = "black"
-
-    # Draw text with outline
-    draw.text(position, label, font=font, fill="white", stroke_width=stroke_width, stroke_fill=stroke_fill, textlength = text_width)
-
-    return image
 
 
 class G_context:

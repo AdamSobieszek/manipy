@@ -32,7 +32,6 @@ class FeatureExtractor(nn.Module):
         if isinstance(y, (list, tuple)):
             y = y[-1]
         # if feature map, global-average pool
-        print(y.shape)
         if y.ndim == 4:
             y = torch.flatten(F.adaptive_avg_pool2d(y, 1), 1)
         y = self.pool(y)

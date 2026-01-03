@@ -1,0 +1,19 @@
+name: traversal_adamw
+output_dir_name: traversal_adamw
+
+learning_rate: 1.0e-3
+weight_decay: 0.0
+beta1: 0.9
+beta2: 0.999
+eps: 1.0e-8
+
+minimal_lr_frac: 0.01
+warmup_frac: 0.01
+
+traversal_mode: none
+traversal_dims: null
+traversal_eps: 1.0e-12
+traversal_gain_clamp: null
+moment1_source: trav
+moment2_source: trav
+keep_last_traversal: false

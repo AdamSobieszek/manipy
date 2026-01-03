@@ -1,0 +1,113 @@
+engine:
+  accelerator: gpu
+  check_finite: true
+  data_dir: ./data
+  detect_anomaly: false
+  deterministic: warn
+  devices: 1
+  early_stopping: null
+  early_stopping_metric: null
+  gradient_clip_alg: norm
+  gradient_clip_val: null
+  log_extra: false
+  logging_interval: 50
+  optimize_memory: false
+  output_dir: ./experiments
+  plot: true
+  precision: bf16-mixed
+  restrict_train_epochs: null
+  resume: true
+  run_scheduler: sequential
+  save_sbatch_scripts: null
+  sbatch_args:
+    mem-per-cpu: 2gb
+    nodes: 1
+    time: 00:05:00
+  sbatch_script_template: null
+  sbatch_time_factor: 1
+  seed: 47
+  seed_mode: fixed
+  silent: false
+  slurm_log_dir: null
+  test: true
+  train: true
+  validate: false
+  workers: 16
+evaluation:
+  aggregate_groups:
+  - engine.seed
+  checkpoints:
+  - best
+  - last
+  column_split_key: optimizer.name
+  column_split_order: null
+  data_dirs: null
+  depth: 1
+  experiment_files:
+    best_model: results_best_model.json
+    config: config.yaml
+    last_model: results_final_model.json
+  experiment_name: null
+  output_dir: null
+  output_types:
+  - pdf
+  - png
+  - csv
+  plot:
+    aggfunc: std
+    format: '2.2'
+    limits:
+    - 85
+    - 100
+    metric: test_acc
+    single_file: true
+    std: true
+    test_metric_mode: max
+    x_axis:
+    - optimizer.weight_decay
+    y_axis:
+    - optimizer.learning_rate
+  plotstyle:
+    color_palette: rocket
+    dpi: 300
+    font:
+      family: serif
+      size: 14
+    matrix_font:
+      size: 12
+    scale: 1.0
+    text:
+      usetex: true
+    tight_layout: true
+  split_groups: false
+  verbose: false
+optimizer:
+  learning_rate: 0.01
+  lr_scheduler:
+    decay_factor: 0.1
+    decay_steps: null
+    decay_strategy: cosine
+    eta_min_factor: 0.01
+    gamma: 0.1
+    interval: step
+    lr_power: 1.0
+    scheduler: cosine
+    step_size: 10
+    warmup_factor: 0.01
+    warmup_steps: null
+    warmup_strategy: linear
+  momentum: 0.5
+  name: sgd_baseline
+  nesterov: false
+  weight_decay: 0.1
+task:
+  batch_size: 512
+  max_epochs: 30
+  max_steps: null
+  model:
+    activation: Sigmoid
+    num_hidden: 128
+  name: mnist
+  output_dir_name: mnist
+  target_metric: val_acc
+  target_metric_mode: max

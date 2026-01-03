@@ -5,16 +5,20 @@ from models.encoders.model_irse import Backbone
 
 
 class IDLoss(nn.Module):
-    def __init__(self):
+    def __init__(self, device='cuda'):
         super(IDLoss, self).__init__()
         print('Loading ResNet ArcFace')
         self.facenet = Backbone(input_size=112, num_layers=50, drop_ratio=0.6, mode='ir_se')
-        self.facenet.load_state_dict(torch.load(model_paths['ir_se50']))
+        self.facenet.load_state_dict(torch.load(model_paths['ir_se50'], map_location=torch.device('cpu')))
+        self.facenet.to(device)
         self.face_pool = torch.nn.AdaptiveAvgPool2d((112, 112))
         self.facenet.eval()
 
     def extract_feats(self, x):
-        x = x[:, :, 35:223, 32:220]  # Crop interesting region
+        # mean pooling to 256x256
+        x = torch.nn.functional.adaptive_avg_pool2d(x, (256, 256))
+        x = x[:, :, 12:12+224, 12:12+224]  # Crop interesting region
+        print(x.shape)
         x = self.face_pool(x)
         x_feats = self.facenet(x)
         return x_feats

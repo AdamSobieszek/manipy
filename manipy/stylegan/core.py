@@ -43,9 +43,9 @@ def setup_stylegan(device='mps'):
         os.system(f"git clone https://{token}@{repo_url}")
 
     # Add necessary paths to sys.path
-    sys.path.append('psychGAN/stylegan3')
     sys.path.append('/Users/adamsobieszek/PycharmProjects/psychGAN/content')
     sys.path.append('/Users/adamsobieszek/PycharmProjects/psychGAN/content/psychGAN')
+    sys.path.append('/Users/adamsobieszek/PycharmProjects/psychGAN/content/psychGAN/stylegan3')
     sys.path.append('/Users/adamsobieszek/PycharmProjects/psychGAN')
     os.chdir('/Users/adamsobieszek/PycharmProjects/psychGAN')
 

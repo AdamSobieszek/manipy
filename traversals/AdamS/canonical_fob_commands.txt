@@ -1,0 +1,10 @@
+bash scripts/fob_bootstrap.sh "$PWD" fob
+source "$(conda info --base)/etc/profile.d/conda.sh" && conda activate fob
+bash scripts/add_traversal_optimizer.sh "$PWD/FOB" "$PWD/our_opt"
+
+
+python -m pytorch_fob.dataset_setup /Users/adamsobieszek/PycharmProjects/_manipy/traversals/AdamS/FOB/example_experiment.yaml
+python -m pytorch_fob.run_experiment /Users/adamsobieszek/PycharmProjects/_manipy/traversals/AdamS/FOB/example_experiment.yaml
+bash scripts/run_traversal_mini.sh fob "$PWD/FOB" "$PWD/outputs-mini"
+bash scripts/run_traversal_full_suite.sh fob "$PWD/FOB" "$PWD/outputs-full"
+python -m pytorch_fob.evaluation.plot_experiment path/to/experiment.yaml

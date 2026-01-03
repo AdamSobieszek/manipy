@@ -26,7 +26,6 @@ from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont
 import os
 import cv2
-from .core import setup_stylegan
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -378,7 +377,7 @@ def reshape_to_18(target, is_w=False, truncation_psi=1, _G=None):
     return target
 
 
-def read(target, passthrough=True, device='mps', is_w=False, truncation_psi=1, _G=None):
+def read(target, passthrough=True, device='mps', is_w=True, truncation_psi=1, _G=None):
     """
     Transforms a path or array of coordinates into a standard format.
 
@@ -396,6 +395,7 @@ def read(target, passthrough=True, device='mps', is_w=False, truncation_psi=1, _
     
     if target is None:
         return 0
+        
     if isinstance(target, PIL.Image.Image):
         return None
     
@@ -404,6 +404,8 @@ def read(target, passthrough=True, device='mps', is_w=False, truncation_psi=1, _
             return torch.tensor(np.load(target), map_location=device)
         elif target.endswith('.pt'):
             return torch.load(target, map_location=device)
+        elif target.endswith('.jpg') or target.endswith('.png') or target.endswith('.jpeg'):
+            return (target, PIL.Image.open(target) )       
         else:
             raise ValueError(f"Unknown file type: {target}")
         
@@ -419,7 +421,7 @@ def read(target, passthrough=True, device='mps', is_w=False, truncation_psi=1, _
 
     return target
 
-def show_faces(target, add=None, subtract=True, plot=True, grid=True, rows=1, labels = None, device='mps', is_w=False, verbose=False, truncation_psi=1, _G=None):
+def show_faces(target, add=None, subtract=True, plot=True, grid=True, rows=1, labels = None, device='mps', is_w=True, verbose=False, truncation_psi=1, _G=None):
     """
     Displays or returns images of faces generated from latent vectors.
 
@@ -449,6 +451,9 @@ def show_faces(target, add=None, subtract=True, plot=True, grid=True, rows=1, la
 
     target, add, subtract = listify(target), listify(add), listify(subtract)
     to_generate = [read(t, False, device, is_w=is_w, truncation_psi=truncation_psi) for t in target if read(t, False) is not None]
+    loading_dict, to_generate = {t[0]: t[1] for t in to_generate if isinstance(t, tuple)}, [t for t in to_generate if not isinstance(t, tuple)]
+    target = [loading_dict.get(t, t) for t in target]
+
 
     if add[0] is not None:
         to_generate_add = [t + read(v, False, device, is_w=True) for t in to_generate for v in add]
@@ -598,3 +603,14 @@ def sample_w(n, truncation_psi=1, device=None, **kwargs):
         all_z = torch.randn([n, 512], device=device)
         all_w = _G.mapping(all_z, None, truncation_psi=truncation_psi)[:, 0]
         return all_w
+
+
+
+
+
+        # MAIN where we call this
+if __name__ == "__main__":
+    # Example usage: sample 4 latent vectors w and display them
+    faces75= list(os.listdir("/Users/adamsobieszek/Downloads/0.75"))
+    faces75= [str(os.path.join("/Users/adamsobieszek/Downloads/0.75", f)) for f in faces75]
+    show_faces(faces75[:4])

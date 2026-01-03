@@ -28,3 +28,6 @@
 .DS_Store
 deixis/face_utils/.assets
 discriminator/**/* 
+*.gz
+/traversals/AdamS/data
+*.ckpt
