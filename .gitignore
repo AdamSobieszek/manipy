@@ -31,3 +31,4 @@ discriminator/**/*
 *.gz
 /traversals/AdamS/data
 *.ckpt
+/traversals/elo_analysis/out_active_rankings/dimensions
