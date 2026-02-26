@@ -159,7 +159,7 @@ class AlphaBetaRegressorNew(nn.Module):
     def __init__(self, latent_dim: int = 512, w_avg: torch.Tensor = None, hidden_dim_multiplier: list = [8, 4, 2], dropout_rates: list = [0.1, 0.1, 0.1], exp_threshold: float = 10.0):
         super().__init__()
         if not isinstance(w_avg, torch.Tensor):
-            raise TypeError("w_avg must be a PyTorch Tensor.")
+            raise TypeError("w_avg must be given as a PyTorch Tensor.")
         self.register_buffer('w_avg', w_avg)
 
         layers = []
@@ -229,7 +229,7 @@ def load_trust_model_ensemble(dim_name, ensemble_size, checkpoint_dir, device, d
                 model_instance.load_state_dict(torch.load(ckpt_path, map_location=device))
                 model_instance.eval()
                 return model_instance
-        for path in [f"model_new_{dim_name}{suffix}.pt", f"{dim_name}{suffix}.pt"]:
+        for path in [f"model_{dim_name}.pt",f"model_new_{dim_name}{suffix}.pt", f"{dim_name}{suffix}.pt"]:
             ckpt_path = os.path.join(checkpoint_dir, path) # Match naming
             if os.path.exists(ckpt_path):
                 model_instance = AlphaBetaRegressorNew(w_avg=w_avg).to(device, dtype)
